@@ -219,6 +219,19 @@ class StorageRepository:
             rows = self._conn.execute("SELECT * FROM webhooks ORDER BY created_at DESC").fetchall()
         return [self._row_to_webhook(row) for row in rows]
 
+    def get_webhook(self, webhook_id: str) -> dict[str, Any] | None:
+        """Fetch a single webhook by ID or return None if not found."""
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM webhooks WHERE id = ?", (webhook_id,)).fetchone()
+        return self._row_to_webhook(row) if row else None
+
+    def delete_webhook(self, webhook_id: str) -> bool:
+        """Delete a webhook by ID and return True if a row was removed."""
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM webhooks WHERE id = ?", (webhook_id,))
+            self._conn.commit()
+            return cursor.rowcount > 0
+
     def record_webhook_delivery(
         self,
         *,
