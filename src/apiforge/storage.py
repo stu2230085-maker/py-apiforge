@@ -135,20 +135,49 @@ class StorageRepository:
         self,
         *,
         status: str | None = None,
+        min_priority: int | None = None,
+        query_text: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List tasks ordered by priority descending and creation time descending."""
         query = "SELECT * FROM tasks"
+        conditions: list[str] = []
         params: list[Any] = []
         if status:
-            query += " WHERE status = ?"
+            conditions.append("status = ?")
             params.append(status)
+        if min_priority is not None:
+            conditions.append("priority >= ?")
+            params.append(min_priority)
+        if query_text:
+            conditions.append("(instr(lower(title), lower(?)) > 0 OR instr(lower(action), lower(?)) > 0)")
+            params.extend([query_text, query_text])
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY priority DESC, created_at DESC LIMIT ? OFFSET ?"
         params.extend([max(1, min(limit, 200)), max(0, offset)])
         with self._lock:
             rows = self._conn.execute(query, tuple(params)).fetchall()
         return [self._row_to_task(row) for row in rows]
+
+    def task_stats(self) -> dict[str, dict[str, int] | int]:
+        """Return aggregate task counts grouped by status and priority."""
+        standard_statuses = ("pending", "retrying", "completed", "failed", "cancelled")
+        standard_priorities = ("1", "2", "3", "4", "5")
+        with self._lock:
+            total = self._conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            status_rows = self._conn.execute(
+                "SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"
+            ).fetchall()
+            priority_rows = self._conn.execute(
+                "SELECT priority, COUNT(*) AS count FROM tasks GROUP BY priority"
+            ).fetchall()
+        by_status = {status: 0 for status in standard_statuses}
+        by_status.update({row["status"]: row["count"] for row in status_rows})
+        by_priority = {priority: 0 for priority in standard_priorities}
+        by_priority.update({str(row["priority"]): row["count"] for row in priority_rows})
+        return {"total_tasks": total, "by_status": by_status, "by_priority": by_priority}
 
     def update_task_execution(
         self,
