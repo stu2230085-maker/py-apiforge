@@ -250,6 +250,65 @@ class TestApiIntegration(unittest.TestCase):
         audit_res = self.client.get("/api/v1/audit-logs?limit=5").json_data()
         self.assertGreaterEqual(audit_res["count"], 3)
 
+    def test_task_cancellation_and_retry_reset(self) -> None:
+        """Tasks can be cancelled and failed tasks can be reset for another attempt."""
+        create_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={"title": "Cancellable job", "action": "transform_payload"},
+        )
+        task_id = create_res.json_data()["id"]
+
+        cancel_res = self.client.post(f"/api/v1/tasks/{task_id}/cancel")
+        self.assertEqual(cancel_res.status_code, 200)
+        cancelled = cancel_res.json_data()
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["attempts"], 0)
+
+        retry_res = self.client.post(f"/api/v1/tasks/{task_id}/retry")
+        self.assertEqual(retry_res.status_code, 200)
+        reset = retry_res.json_data()
+        self.assertEqual(reset["status"], "pending")
+        self.assertEqual(reset["attempts"], 0)
+        self.assertIsNone(reset["result"])
+        self.assertIsNone(reset["error_message"])
+
+        completed_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={"title": "Completed job", "action": "transform_payload"},
+        )
+        completed_id = completed_res.json_data()["id"]
+        self.assertEqual(self.client.post(f"/api/v1/tasks/{completed_id}/process").status_code, 200)
+
+        conflict_res = self.client.post(f"/api/v1/tasks/{completed_id}/cancel")
+        self.assertEqual(conflict_res.status_code, 409)
+        conflict = conflict_res.json_data()
+        self.assertEqual(conflict["title"], "Task Conflict")
+        self.assertEqual(conflict["detail"], "Completed tasks cannot be cancelled")
+
+    def test_retry_reset_failed_task(self) -> None:
+        """A failed task can be reset with its attempts, result, and error cleared."""
+        create_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={
+                "title": "Retryable job",
+                "action": "transform_payload",
+                "payload": {"force_error": "upstream timeout"},
+                "max_retries": 1,
+            },
+        )
+        task_id = create_res.json_data()["id"]
+        failed = self.client.post(f"/api/v1/tasks/{task_id}/process").json_data()["task"]
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["attempts"], 1)
+
+        reset_res = self.client.post(f"/api/v1/tasks/{task_id}/retry")
+        self.assertEqual(reset_res.status_code, 200)
+        reset = reset_res.json_data()
+        self.assertEqual(reset["status"], "pending")
+        self.assertEqual(reset["attempts"], 0)
+        self.assertIsNone(reset["result"])
+        self.assertIsNone(reset["error_message"])
+
     def test_rate_limit_enforcement_returns_429(self) -> None:
         """Exceeding the token bucket limit should return HTTP 429 Too Many Requests."""
         strict_app = ApiForgeApp(
