@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import csv
+import io
 import threading
 import unittest
 from urllib.request import Request, urlopen
@@ -120,6 +122,43 @@ class TestApiIntegration(unittest.TestCase):
         del_res = self.client.delete(f"/api/v1/tasks/{task_id}")
         self.assertEqual(del_res.status_code, 200)
         self.assertTrue(del_res.json_data()["deleted"])
+
+    def test_batch_task_creation_and_csv_export(self) -> None:
+        """Batch task creation should persist tasks that can be exported as CSV."""
+        batch_res = self.client.post(
+            "/api/v1/tasks/batch",
+            json_body={
+                "tasks": [
+                    {"title": "First batch task", "action": "transform_payload"},
+                    {"title": "Second batch task", "priority": 5},
+                ]
+            },
+        )
+        self.assertEqual(batch_res.status_code, 201)
+        batch_data = batch_res.json_data()
+        self.assertEqual(batch_data["count"], 2)
+        self.assertEqual(len(batch_data["items"]), 2)
+
+        export_res = self.client.get("/api/v1/tasks/export?format=csv")
+        self.assertEqual(export_res.status_code, 200)
+        self.assertEqual(export_res.content_type, "text/csv; charset=utf-8")
+        rows = list(csv.DictReader(io.StringIO(export_res.body.decode("utf-8"))))
+        self.assertEqual(
+            rows[0].keys(),
+            {
+                "id",
+                "title",
+                "action",
+                "status",
+                "priority",
+                "attempts",
+                "max_retries",
+                "owner",
+                "created_at",
+                "updated_at",
+            },
+        )
+        self.assertEqual({row["title"] for row in rows}, {"First batch task", "Second batch task"})
 
     def test_failed_task_retry_and_audit_metrics(self) -> None:
         """Tasks that fail should transition to retrying/failed and be recorded in audit logs and metrics."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import threading
 import time
 from typing import Any
@@ -18,6 +20,7 @@ from apiforge.router import (
     parse_url_and_query,
 )
 from apiforge.schema import (
+    TaskBatchCreateRequest,
     TaskCreateRequest,
     TokenRequest,
     WebhookCreateRequest,
@@ -334,6 +337,32 @@ class ApiForgeApp:
                 owner=owner,
             )
 
+        @self.post(
+            "/api/v1/tasks/batch",
+            tags=["tasks"],
+            auth_required=True,
+            request_model=TaskBatchCreateRequest,
+            status_code=201,
+            summary="Create multiple managed asynchronous tasks",
+        )
+        def create_task_batch(ctx: RequestContext) -> dict[str, Any]:
+            """Validate and persist multiple tasks in pending state."""
+            req: TaskBatchCreateRequest = ctx.validated_body
+            owner = ctx.principal.subject if ctx.principal else "anonymous"
+            items = [
+                self.storage.create_task(
+                    title=task.title,
+                    action=task.action,
+                    payload=task.payload,
+                    priority=task.priority,
+                    max_retries=task.max_retries,
+                    webhook_url=task.webhook_url,
+                    owner=owner,
+                )
+                for task in req.tasks
+            ]
+            return {"items": items, "count": len(items)}
+
         @self.get(
             "/api/v1/tasks",
             tags=["tasks"],
@@ -347,6 +376,48 @@ class ApiForgeApp:
             offset = int(ctx.query_params.get("offset", "0"))
             items = self.storage.list_tasks(status=status_filter, limit=limit, offset=offset)
             return {"items": items, "count": len(items)}
+
+        @self.get(
+            "/api/v1/tasks/export",
+            tags=["tasks"],
+            auth_required=True,
+            summary="Export tasks as JSON or CSV",
+        )
+        def export_tasks(ctx: RequestContext) -> Any:
+            """Export persisted tasks in JSON or CSV format."""
+            export_format = ctx.query_params.get("format", "json")
+            if export_format not in {"json", "csv"}:
+                raise ApiHttpError(
+                    status_code=400,
+                    title="Invalid Export Format",
+                    detail="format must be either 'json' or 'csv'",
+                    error_type="https://apiforge.dev/errors/invalid-export-format",
+                )
+
+            items = self.storage.list_tasks(status=ctx.query_params.get("status"), limit=200)
+            if export_format == "json":
+                return {"items": items, "count": len(items)}
+
+            columns = [
+                "id",
+                "title",
+                "action",
+                "status",
+                "priority",
+                "attempts",
+                "max_retries",
+                "owner",
+                "created_at",
+                "updated_at",
+            ]
+            output = io.StringIO(newline="")
+            writer = csv.DictWriter(output, fieldnames=columns, lineterminator="\n")
+            writer.writeheader()
+            writer.writerows({column: item[column] for column in columns} for item in items)
+            return HttpResponse(
+                body=output.getvalue().encode("utf-8"),
+                content_type="text/csv; charset=utf-8",
+            )
 
         @self.get(
             "/api/v1/tasks/{task_id}",
