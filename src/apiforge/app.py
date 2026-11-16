@@ -317,6 +317,17 @@ class ApiForgeApp:
                 "role": body.role,
             }
 
+        @self.get(
+            "/api/v1/actions",
+            tags=["tasks"],
+            auth_required=True,
+            summary="List available task worker actions",
+        )
+        def list_actions(_ctx: RequestContext) -> dict[str, Any]:
+            """List all registered task worker actions."""
+            actions = self.worker.list_actions()
+            return {"actions": actions, "count": len(actions)}
+
         @self.post(
             "/api/v1/tasks",
             tags=["tasks"],

@@ -54,6 +54,32 @@ def _handle_hash_content(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _handle_text_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+    """Analyze character, word, unique word, and line counts in text."""
+    text = str(payload.get("text", ""))
+    words = [word.lower() for word in text.split() if word]
+    return {
+        "char_count": len(text),
+        "word_count": len(words),
+        "unique_word_count": len(set(words)),
+        "line_count": len(text.splitlines()) if text else 0,
+    }
+
+
+def _handle_json_filter(payload: dict[str, Any]) -> dict[str, Any]:
+    """Filter a JSON object to the requested keys."""
+    data = payload.get("data", {})
+    keys = payload.get("keys", [])
+    if not isinstance(data, dict):
+        raise ValueError("Payload field 'data' must be a dict")
+    if not isinstance(keys, list):
+        raise ValueError("Payload field 'keys' must be a list")
+    return {
+        "filtered": {key: data[key] for key in keys if key in data},
+        "matched_count": sum(1 for key in keys if key in data),
+    }
+
+
 class TaskWorker:
     """Executes queued tasks with retry tracking and dispatches signed webhook events."""
 
@@ -65,11 +91,20 @@ class TaskWorker:
             "transform_payload": _handle_transform_payload,
             "compute_stats": _handle_compute_stats,
             "hash_content": _handle_hash_content,
+            "text_analysis": _handle_text_analysis,
+            "json_filter": _handle_json_filter,
         }
 
     def register_action(self, action_name: str, handler: ActionHandler) -> None:
         """Register a custom task execution handler."""
         self._handlers[action_name] = handler
+
+    def list_actions(self) -> list[dict[str, str]]:
+        """List registered task actions and their descriptions."""
+        return [
+            {"name": name, "description": (handler.__doc__ or "").strip()}
+            for name, handler in sorted(self._handlers.items())
+        ]
 
     def process_task(self, task_id: str) -> dict[str, Any]:
         """Execute a single task synchronously, updating status and emitting webhooks."""
