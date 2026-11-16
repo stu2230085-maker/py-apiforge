@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import threading
 import time
 from typing import Any
@@ -30,6 +31,7 @@ from apiforge.security import (
     authenticate_headers,
     encode_jwt,
     generate_secret_token,
+    sign_webhook_payload,
 )
 from apiforge.storage import StorageRepository
 from apiforge.worker import TaskWorker
@@ -529,6 +531,62 @@ class ApiForgeApp:
                 "subscriptions": subscriptions,
                 "deliveries": deliveries,
             }
+
+        @self.delete(
+            "/api/v1/webhooks/{webhook_id}",
+            tags=["webhooks"],
+            auth_required=True,
+            summary="Delete a registered webhook subscription",
+        )
+        def delete_webhook(ctx: RequestContext) -> dict[str, Any]:
+            """Remove a webhook subscription from persistence."""
+            webhook_id = ctx.path_params["webhook_id"]
+            if not self.storage.delete_webhook(webhook_id):
+                raise ApiHttpError(
+                    status_code=404,
+                    title="Webhook Not Found",
+                    detail=f"Webhook '{webhook_id}' does not exist",
+                    error_type="https://apiforge.dev/errors/webhook-not-found",
+                )
+            return {"deleted": True, "webhook_id": webhook_id}
+
+        @self.post(
+            "/api/v1/webhooks/{webhook_id}/test",
+            tags=["webhooks"],
+            auth_required=True,
+            summary="Trigger a signed webhook ping test delivery",
+        )
+        def test_webhook(ctx: RequestContext) -> dict[str, Any]:
+            """Record a signed webhook.ping test delivery for a subscription."""
+            webhook_id = ctx.path_params["webhook_id"]
+            webhook = self.storage.get_webhook(webhook_id)
+            if webhook is None:
+                raise ApiHttpError(
+                    status_code=404,
+                    title="Webhook Not Found",
+                    detail=f"Webhook '{webhook_id}' does not exist",
+                    error_type="https://apiforge.dev/errors/webhook-not-found",
+                )
+            event_payload = {
+                "event": "webhook.ping",
+                "timestamp": int(time.time()),
+                "data": {
+                    "webhook_id": webhook_id,
+                    "target_url": webhook["target_url"],
+                },
+            }
+            payload_bytes = json.dumps(
+                event_payload, separators=(",", ":"), sort_keys=True
+            ).encode("utf-8")
+            sig_header, _ = sign_webhook_payload(payload_bytes, webhook["secret"])
+            return self.storage.record_webhook_delivery(
+                webhook_id=webhook_id,
+                target_url=webhook["target_url"],
+                event_type="webhook.ping",
+                task_id="ping",
+                signature=sig_header,
+                payload=event_payload,
+            )
 
         @self.get(
             "/api/v1/audit-logs",

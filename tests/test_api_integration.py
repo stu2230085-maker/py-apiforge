@@ -124,6 +124,41 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(del_res.status_code, 200)
         self.assertTrue(del_res.json_data()["deleted"])
 
+    def test_webhook_ping_and_deletion(self) -> None:
+        """Webhook ping should record a signed delivery and deletion should remove the subscription."""
+        wh_secret = "whsec_ping_test_12345"
+        wh_res = self.client.post(
+            "/api/v1/webhooks",
+            json_body={
+                "target_url": "https://hooks.example.org/ping",
+                "events": ["webhook.ping"],
+                "secret": wh_secret,
+                "description": "Ping test sink",
+            },
+        )
+        self.assertEqual(wh_res.status_code, 201)
+        webhook_id = wh_res.json_data()["id"]
+
+        ping_res = self.client.post(f"/api/v1/webhooks/{webhook_id}/test")
+        self.assertEqual(ping_res.status_code, 200)
+        delivery = self.client.get("/api/v1/webhooks?task_id=ping").json_data()["deliveries"][0]
+        self.assertEqual(delivery["event_type"], "webhook.ping")
+        self.assertEqual(delivery["task_id"], "ping")
+        raw_payload = json.dumps(delivery["payload"], separators=(",", ":"), sort_keys=True).encode("utf-8")
+        self.assertTrue(
+            verify_webhook_signature(
+                raw_payload,
+                delivery["signature"],
+                wh_secret,
+                now=delivery["payload"]["timestamp"],
+            )
+        )
+
+        del_res = self.client.delete(f"/api/v1/webhooks/{webhook_id}")
+        self.assertEqual(del_res.status_code, 200)
+        self.assertEqual(del_res.json_data(), {"deleted": True, "webhook_id": webhook_id})
+        self.assertEqual(self.client.post(f"/api/v1/webhooks/{webhook_id}/test").status_code, 404)
+
     def test_batch_task_creation_and_csv_export(self) -> None:
         """Batch task creation should persist tasks that can be exported as CSV."""
         batch_res = self.client.post(
