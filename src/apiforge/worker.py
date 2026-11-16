@@ -118,6 +118,23 @@ class TaskWorker:
             "webhook_deliveries": deliveries,
         }
 
+    def process_pending_tasks(
+        self, *, limit: int = 10, min_priority: int | None = None
+    ) -> dict[str, Any]:
+        """Execute pending tasks in priority order and summarize their outcomes."""
+        pending_tasks = self.storage.list_tasks(
+            status="pending", min_priority=min_priority, limit=limit
+        )
+        results = [self.process_task(task["id"]) for task in pending_tasks]
+        return {
+            "processed_count": len(results),
+            "completed_count": sum(1 for result in results if result["task"]["status"] == "completed"),
+            "failed_count": sum(
+                1 for result in results if result["task"]["status"] in {"failed", "retrying"}
+            ),
+            "results": results,
+        }
+
     def _dispatch_webhooks(self, event_type: str, task: dict[str, Any]) -> list[dict[str, Any]]:
         """Emit HMAC-signed webhook notifications for matching subscriptions and task webhook_url."""
         deliveries: list[dict[str, Any]] = []
