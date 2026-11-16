@@ -367,15 +367,32 @@ class ApiForgeApp:
             "/api/v1/tasks",
             tags=["tasks"],
             auth_required=True,
-            summary="List tasks with optional status filter and pagination",
+            summary="List tasks with optional status, priority, and keyword filters",
         )
         def list_tasks(ctx: RequestContext) -> dict[str, Any]:
             """List persisted tasks ordered by priority and creation timestamp."""
             status_filter = ctx.query_params.get("status")
+            min_priority = ctx.query_params.get("min_priority")
             limit = int(ctx.query_params.get("limit", "50"))
             offset = int(ctx.query_params.get("offset", "0"))
-            items = self.storage.list_tasks(status=status_filter, limit=limit, offset=offset)
+            items = self.storage.list_tasks(
+                status=status_filter,
+                min_priority=int(min_priority) if min_priority is not None else None,
+                query_text=ctx.query_params.get("q"),
+                limit=limit,
+                offset=offset,
+            )
             return {"items": items, "count": len(items)}
+
+        @self.get(
+            "/api/v1/tasks/stats",
+            tags=["tasks"],
+            auth_required=True,
+            summary="Return aggregate task statistics",
+        )
+        def task_stats(ctx: RequestContext) -> dict[str, Any]:
+            """Return task counts grouped by status and priority."""
+            return self.storage.task_stats()
 
         @self.get(
             "/api/v1/tasks/export",

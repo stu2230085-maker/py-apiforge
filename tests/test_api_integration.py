@@ -55,6 +55,7 @@ class TestApiIntegration(unittest.TestCase):
         unauth_client = TestClient(self.app)
         res = unauth_client.get("/api/v1/tasks")
         self.assertEqual(res.status_code, 401)
+        self.assertEqual(unauth_client.get("/api/v1/tasks/stats").status_code, 401)
         self.assertIn("application/problem+json", res.content_type)
         problem = res.json_data()
         self.assertEqual(problem["status"], 401)
@@ -159,6 +160,30 @@ class TestApiIntegration(unittest.TestCase):
             },
         )
         self.assertEqual({row["title"] for row in rows}, {"First batch task", "Second batch task"})
+
+    def test_task_filtering_and_statistics(self) -> None:
+        """Task listing should filter by minimum priority and case-insensitive keyword."""
+        for title, action, priority in (
+            ("Deploy needle", "release", 5),
+            ("Review docs", "needle_scan", 4),
+            ("Low priority needle", "cleanup", 2),
+        ):
+            response = self.client.post(
+                "/api/v1/tasks",
+                json_body={"title": title, "action": action, "priority": priority},
+            )
+            self.assertEqual(response.status_code, 201)
+
+        filtered = self.client.get("/api/v1/tasks?min_priority=4&q=NEEDLE")
+        self.assertEqual(filtered.status_code, 200)
+        self.assertEqual({item["title"] for item in filtered.json_data()["items"]}, {"Deploy needle", "Review docs"})
+
+        stats = self.client.get("/api/v1/tasks/stats")
+        self.assertEqual(stats.status_code, 200)
+        stats_data = stats.json_data()
+        self.assertEqual(stats_data["total_tasks"], 3)
+        self.assertEqual(stats_data["by_status"]["pending"], 3)
+        self.assertEqual(stats_data["by_priority"], {"1": 0, "2": 1, "3": 0, "4": 1, "5": 1})
 
     def test_failed_task_retry_and_audit_metrics(self) -> None:
         """Tasks that fail should transition to retrying/failed and be recorded in audit logs and metrics."""
