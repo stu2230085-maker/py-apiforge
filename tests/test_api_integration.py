@@ -250,6 +250,29 @@ class TestApiIntegration(unittest.TestCase):
         audit_res = self.client.get("/api/v1/audit-logs?limit=5").json_data()
         self.assertGreaterEqual(audit_res["count"], 3)
 
+    def test_audit_log_filtering_and_cleanup(self) -> None:
+        """Audit logs should support filtering and deletion."""
+        create_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={"title": "Audit filter task", "action": "transform_payload"},
+        )
+        self.assertEqual(create_res.status_code, 201)
+
+        filtered = self.client.get("/api/v1/audit-logs?method=POST&status_code=201")
+        self.assertEqual(filtered.status_code, 200)
+        filtered_data = filtered.json_data()
+        self.assertGreaterEqual(filtered_data["count"], 1)
+        self.assertTrue(
+            all(
+                item["method"] == "POST" and item["status_code"] == 201
+                for item in filtered_data["items"]
+            )
+        )
+
+        clear_res = self.client.delete("/api/v1/audit-logs")
+        self.assertEqual(clear_res.status_code, 200)
+        self.assertGreaterEqual(clear_res.json_data()["deleted_count"], 1)
+
     def test_task_cancellation_and_retry_reset(self) -> None:
         """Tasks can be cancelled and failed tasks can be reset for another attempt."""
         create_res = self.client.post(
