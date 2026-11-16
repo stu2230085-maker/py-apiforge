@@ -40,6 +40,13 @@ class TaskCreateRequest:
 
 
 @dataclass
+class TaskBatchCreateRequest:
+    """Request payload for creating multiple managed asynchronous tasks."""
+
+    tasks: list[TaskCreateRequest]
+
+
+@dataclass
 class WebhookCreateRequest:
     """Request payload for registering an event webhook subscription."""
 
@@ -128,6 +135,9 @@ def _apply_domain_constraints(instance: Any) -> list[dict[str, Any]]:
             errors.append({"field": "priority", "message": "priority must be between 1 and 5"})
         if not 0 <= instance.max_retries <= 10:
             errors.append({"field": "max_retries", "message": "max_retries must be between 0 and 10"})
+    elif isinstance(instance, TaskBatchCreateRequest):
+        if not 1 <= len(instance.tasks) <= 50:
+            errors.append({"field": "tasks", "message": "tasks must contain between 1 and 50 items"})
     elif isinstance(instance, TokenRequest):
         if not instance.subject.strip():
             errors.append({"field": "subject", "message": "subject must not be empty"})
