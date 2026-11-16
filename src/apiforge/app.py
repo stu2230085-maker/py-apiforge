@@ -439,6 +439,72 @@ class ApiForgeApp:
             return task
 
         @self.post(
+            "/api/v1/tasks/{task_id}/cancel",
+            tags=["tasks"],
+            auth_required=True,
+            summary="Cancel a task by ID",
+        )
+        def cancel_task(ctx: RequestContext) -> dict[str, Any]:
+            """Cancel a task unless it has already completed."""
+            task_id = ctx.path_params["task_id"]
+            task = self.storage.get_task(task_id)
+            if task is None:
+                raise ApiHttpError(
+                    status_code=404,
+                    title="Task Not Found",
+                    detail=f"Task '{task_id}' does not exist",
+                    error_type="https://apiforge.dev/errors/task-not-found",
+                )
+            if task["status"] == "completed":
+                raise ApiHttpError(
+                    status_code=409,
+                    title="Task Conflict",
+                    detail="Completed tasks cannot be cancelled",
+                    error_type="https://apiforge.dev/errors/task-conflict",
+                )
+            updated = self.storage.update_task_execution(
+                task_id,
+                status="cancelled",
+                attempts=task["attempts"],
+                result=task["result"],
+                error_message=task["error_message"],
+            )
+            return updated if updated is not None else task
+
+        @self.post(
+            "/api/v1/tasks/{task_id}/retry",
+            tags=["tasks"],
+            auth_required=True,
+            summary="Reset a task for retry",
+        )
+        def retry_task(ctx: RequestContext) -> dict[str, Any]:
+            """Reset a failed, retrying, or cancelled task to pending."""
+            task_id = ctx.path_params["task_id"]
+            task = self.storage.get_task(task_id)
+            if task is None:
+                raise ApiHttpError(
+                    status_code=404,
+                    title="Task Not Found",
+                    detail=f"Task '{task_id}' does not exist",
+                    error_type="https://apiforge.dev/errors/task-not-found",
+                )
+            if task["status"] not in {"failed", "cancelled", "retrying"}:
+                raise ApiHttpError(
+                    status_code=409,
+                    title="Task Conflict",
+                    detail="Only failed, retrying, or cancelled tasks can be reset for retry",
+                    error_type="https://apiforge.dev/errors/task-conflict",
+                )
+            updated = self.storage.update_task_execution(
+                task_id,
+                status="pending",
+                attempts=0,
+                result=None,
+                error_message=None,
+            )
+            return updated if updated is not None else task
+
+        @self.post(
             "/api/v1/tasks/{task_id}/process",
             tags=["tasks"],
             auth_required=True,
