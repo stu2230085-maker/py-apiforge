@@ -8,6 +8,7 @@ from apiforge.ratelimit import TokenBucketRateLimiter
 from apiforge.schema import (
     SchemaValidationError,
     TaskCreateRequest,
+    TaskUpdateRequest,
     WebhookCreateRequest,
     dataclass_to_json_schema,
     validate_payload,
@@ -56,6 +57,19 @@ class TestSchemaAndSecurity(unittest.TestCase):
         self.assertIn("title", schema["required"])
         self.assertEqual(schema["properties"]["priority"]["type"], "integer")
         self.assertEqual(schema["properties"]["webhook_url"]["type"], ["string", "null"])
+
+    def test_validate_task_update_request_domain_constraints(self) -> None:
+        """Partial task updates should validate only supplied metadata fields."""
+        req = validate_payload(TaskUpdateRequest, {"title": "Updated", "payload": {"key": "value"}})
+        self.assertEqual(req.title, "Updated")
+        self.assertEqual(req.priority, None)
+
+        with self.assertRaises(SchemaValidationError) as ctx:
+            validate_payload(TaskUpdateRequest, {"title": " ", "priority": 6, "max_retries": -1})
+        self.assertEqual(
+            {error["field"] for error in ctx.exception.errors},
+            {"title", "priority", "max_retries"},
+        )
 
     def test_webhook_validation_requires_http_url(self) -> None:
         """WebhookCreateRequest should reject non-HTTP target URLs."""

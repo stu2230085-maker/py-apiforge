@@ -6,6 +6,7 @@ from apiforge.router import ApiHttpError, HttpResponse, RequestContext, Router
 from apiforge.schema import (
     SchemaValidationError,
     TaskCreateRequest,
+    TaskUpdateRequest,
     TokenRequest,
     WebhookCreateRequest,
     dataclass_to_json_schema,
@@ -38,6 +39,7 @@ __all__ = [
     "SchemaValidationError",
     "StorageRepository",
     "TaskCreateRequest",
+    "TaskUpdateRequest",
     "TaskWorker",
     "TestClient",
     "TokenBucketRateLimiter",

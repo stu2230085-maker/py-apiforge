@@ -203,6 +203,39 @@ class StorageRepository:
             self._conn.commit()
         return self.get_task(task_id)
 
+    def update_task_metadata(
+        self,
+        task_id: str,
+        *,
+        title: str | None = None,
+        priority: int | None = None,
+        max_retries: int | None = None,
+        payload: dict[str, Any] | None = None,
+        webhook_url: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Update supplied task metadata fields and return the updated task."""
+        fields: list[str] = []
+        values: list[Any] = []
+        for column, value in (
+            ("title", title),
+            ("priority", priority),
+            ("max_retries", max_retries),
+            ("payload_json", json.dumps(payload, ensure_ascii=False) if payload is not None else None),
+            ("webhook_url", webhook_url),
+        ):
+            if value is not None:
+                fields.append(f"{column} = ?")
+                values.append(value)
+        fields.append("updated_at = ?")
+        values.extend([time.time(), task_id])
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?",
+                tuple(values),
+            )
+            self._conn.commit()
+        return self.get_task(task_id)
+
     def delete_task(self, task_id: str) -> bool:
         """Delete a task by ID and return True if a row was removed."""
         with self._lock:

@@ -285,6 +285,62 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(conflict["title"], "Task Conflict")
         self.assertEqual(conflict["detail"], "Completed tasks cannot be cancelled")
 
+    def test_partial_task_metadata_update_and_validation(self) -> None:
+        """Task metadata updates should preserve omitted fields and reject invalid values."""
+        create_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={
+                "title": "Original title",
+                "payload": {"original": True},
+                "priority": 2,
+                "max_retries": 3,
+                "webhook_url": "https://hooks.example.org/original",
+            },
+        )
+        task_id = create_res.json_data()["id"]
+        original_updated_at = create_res.json_data()["updated_at"]
+
+        update_res = self.client.post(
+            f"/api/v1/tasks/{task_id}/update",
+            json_body={"title": "Updated title", "priority": 5, "payload": {"changed": True}},
+        )
+        self.assertEqual(update_res.status_code, 200)
+        updated = update_res.json_data()
+        self.assertEqual(updated["title"], "Updated title")
+        self.assertEqual(updated["priority"], 5)
+        self.assertEqual(updated["payload"], {"changed": True})
+        self.assertEqual(updated["max_retries"], 3)
+        self.assertEqual(updated["webhook_url"], "https://hooks.example.org/original")
+        self.assertGreaterEqual(updated["updated_at"], original_updated_at)
+
+        invalid_res = self.client.post(
+            f"/api/v1/tasks/{task_id}/update",
+            json_body={"title": " ", "priority": 0, "max_retries": 11},
+        )
+        self.assertEqual(invalid_res.status_code, 422)
+        self.assertEqual(
+            {error["field"] for error in invalid_res.json_data()["errors"]},
+            {"title", "priority", "max_retries"},
+        )
+
+    def test_completed_task_metadata_update_conflicts(self) -> None:
+        """Completed tasks should not accept metadata updates."""
+        create_res = self.client.post(
+            "/api/v1/tasks",
+            json_body={"title": "Completed job", "action": "transform_payload"},
+        )
+        task_id = create_res.json_data()["id"]
+        self.assertEqual(self.client.post(f"/api/v1/tasks/{task_id}/process").status_code, 200)
+
+        conflict_res = self.client.post(
+            f"/api/v1/tasks/{task_id}/update",
+            json_body={"title": "Too late"},
+        )
+        self.assertEqual(conflict_res.status_code, 409)
+        conflict = conflict_res.json_data()
+        self.assertEqual(conflict["title"], "Task Conflict")
+        self.assertEqual(conflict["detail"], "Completed tasks cannot be updated")
+
     def test_retry_reset_failed_task(self) -> None:
         """A failed task can be reset with its attempts, result, and error cleared."""
         create_res = self.client.post(
