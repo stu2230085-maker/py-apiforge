@@ -725,5 +725,22 @@ class ApiForgeApp:
         def list_audit_logs(ctx: RequestContext) -> dict[str, Any]:
             """Fetch recent API audit logs recorded in SQLite."""
             limit = int(ctx.query_params.get("limit", "50"))
-            logs = self.storage.list_audit_logs(limit=limit)
+            status_code = ctx.query_params.get("status_code")
+            logs = self.storage.list_audit_logs(
+                limit=limit,
+                method=ctx.query_params.get("method"),
+                status_code=int(status_code) if status_code is not None else None,
+                actor=ctx.query_params.get("actor"),
+            )
             return {"items": logs, "count": len(logs)}
+
+        @self.delete(
+            "/api/v1/audit-logs",
+            tags=["audit"],
+            auth_required=True,
+            summary="Clear recorded HTTP audit logs",
+        )
+        def clear_audit_logs(_ctx: RequestContext) -> dict[str, int]:
+            """Delete all API audit logs."""
+            deleted_count = self.storage.clear_audit_logs()
+            return {"deleted_count": deleted_count}

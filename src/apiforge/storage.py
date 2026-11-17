@@ -387,14 +387,41 @@ class StorageRepository:
             )
             self._conn.commit()
 
-    def list_audit_logs(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_audit_logs(
+        self,
+        limit: int = 50,
+        *,
+        method: str | None = None,
+        status_code: int | None = None,
+        actor: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Fetch recent API audit log entries."""
+        query = "SELECT * FROM audit_logs"
+        conditions: list[str] = []
+        params: list[Any] = []
+        if method is not None:
+            conditions.append("method = ?")
+            params.append(method.upper())
+        if status_code is not None:
+            conditions.append("status_code = ?")
+            params.append(status_code)
+        if actor is not None:
+            conditions.append("actor = ?")
+            params.append(actor)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(max(1, min(limit, 200)))
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM audit_logs ORDER BY id DESC LIMIT ?",
-                (max(1, min(limit, 200)),),
-            ).fetchall()
+            rows = self._conn.execute(query, tuple(params)).fetchall()
         return [dict(row) for row in rows]
+
+    def clear_audit_logs(self) -> int:
+        """Delete all API audit log entries and return the number removed."""
+        with self._lock:
+            cursor = self._conn.execute("DELETE FROM audit_logs")
+            self._conn.commit()
+            return cursor.rowcount
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
