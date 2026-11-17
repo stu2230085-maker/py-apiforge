@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
+from apiforge.cli import main as cli_main
 from apiforge.ratelimit import TokenBucketRateLimiter
 from apiforge.schema import (
     SchemaValidationError,
@@ -94,6 +98,31 @@ class TestSchemaAndSecurity(unittest.TestCase):
             decode_jwt(token, secret=secret, now=1031)
         with self.assertRaises(AuthenticationError):
             decode_jwt(token, secret="wrong-secret", now=1010)
+
+    def test_cli_verify_token(self) -> None:
+        """CLI should print claims for valid tokens and JSON errors for invalid tokens."""
+        secret = "cli-test-secret"
+        token = encode_jwt({"sub": "cli-user"}, secret=secret)
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(cli_main(["verify-token", token, "--secret", secret]), 0)
+        self.assertEqual(json.loads(output.getvalue())["sub"], "cli-user")
+
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(cli_main(["verify-token", "invalid.token.here"]), 1)
+        error = json.loads(output.getvalue())
+        self.assertFalse(error["valid"])
+        self.assertIn("error", error)
+
+    def test_cli_stats(self) -> None:
+        """CLI should print statistics for an in-memory database."""
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(cli_main(["stats", "--db", ":memory:"]), 0)
+        stats = json.loads(output.getvalue())
+        self.assertEqual(stats["task_stats"]["total_tasks"], 0)
+        self.assertEqual(stats["webhooks_count"], 0)
 
     def test_api_key_and_header_authentication(self) -> None:
         """API key and Bearer token headers should resolve into AuthPrincipal."""

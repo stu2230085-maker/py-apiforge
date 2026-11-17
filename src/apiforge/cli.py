@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from apiforge.app import ApiForgeApp
-from apiforge.security import encode_jwt
+from apiforge.security import AuthenticationError, decode_jwt, encode_jwt
 from apiforge.server import create_http_server
 
 
@@ -41,6 +41,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default="apiforge-default-jwt-secret-key-2026",
         help="HMAC-SHA256 signing secret",
     )
+
+    verify_token_parser = subparsers.add_parser("verify-token", help="Verify and decode a JWT access token")
+    verify_token_parser.add_argument("token", help="JWT string to verify")
+    verify_token_parser.add_argument(
+        "--secret",
+        default="apiforge-default-jwt-secret-key-2026",
+        help="HMAC-SHA256 signing secret",
+    )
+
+    stats_parser = subparsers.add_parser("stats", help="Print database task and webhook statistics")
+    stats_parser.add_argument("--db", default="apiforge.db", help="SQLite database file path or :memory:")
 
     return parser
 
@@ -75,6 +86,35 @@ def _cmd_token(sub: str, role: str, ttl: int, secret: str) -> int:
     return 0
 
 
+def _cmd_verify_token(token: str, secret: str) -> int:
+    """Verify and print the claims from a signed HS256 JWT token."""
+    try:
+        print(json.dumps(decode_jwt(token, secret=secret), ensure_ascii=False, indent=2))
+    except AuthenticationError as exc:
+        print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+    return 0
+
+
+def _cmd_stats(db_path: str) -> int:
+    """Print aggregate task and webhook statistics from the database."""
+    app = ApiForgeApp(db_path=db_path)
+    try:
+        print(
+            json.dumps(
+                {
+                    "task_stats": app.storage.task_stats(),
+                    "webhooks_count": len(app.storage.list_webhooks()),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    finally:
+        app.storage.close()
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint for `apiforge`."""
     parser = _build_parser()
@@ -82,6 +122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "token":
         return _cmd_token(args.sub, args.role, args.ttl, args.secret)
+    if args.command == "verify-token":
+        return _cmd_verify_token(args.token, args.secret)
+    if args.command == "stats":
+        return _cmd_stats(args.db)
 
     app = ApiForgeApp(db_path=":memory:")
     try:
