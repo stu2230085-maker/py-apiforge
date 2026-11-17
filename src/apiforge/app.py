@@ -439,6 +439,20 @@ class ApiForgeApp:
                 content_type="text/csv; charset=utf-8",
             )
 
+        @self.post(
+            "/api/v1/tasks/process-pending",
+            tags=["tasks"],
+            auth_required=True,
+            summary="Process pending tasks in priority order",
+        )
+        def process_pending_tasks(ctx: RequestContext) -> dict[str, Any]:
+            """Execute queued pending tasks through the worker engine."""
+            min_priority = ctx.query_params.get("min_priority")
+            return self.worker.process_pending_tasks(
+                limit=int(ctx.query_params.get("limit", "10")),
+                min_priority=int(min_priority) if min_priority is not None else None,
+            )
+
         @self.get(
             "/api/v1/tasks/{task_id}",
             tags=["tasks"],

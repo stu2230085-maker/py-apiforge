@@ -220,6 +220,27 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(stats_data["by_status"]["pending"], 3)
         self.assertEqual(stats_data["by_priority"], {"1": 0, "2": 1, "3": 0, "4": 1, "5": 1})
 
+    def test_process_pending_tasks_filters_and_orders_by_priority(self) -> None:
+        """Bulk processing should select pending tasks by minimum priority in priority order."""
+        for title, priority in (("Low priority", 2), ("Highest priority", 5), ("Eligible", 4)):
+            response = self.client.post(
+                "/api/v1/tasks",
+                json_body={"title": title, "action": "transform_payload", "priority": priority},
+            )
+            self.assertEqual(response.status_code, 201)
+
+        response = self.client.post("/api/v1/tasks/process-pending?min_priority=4")
+        self.assertEqual(response.status_code, 200)
+        data = response.json_data()
+        self.assertEqual(data["processed_count"], 2)
+        self.assertEqual(data["completed_count"], 2)
+        self.assertEqual(data["failed_count"], 0)
+        self.assertEqual(
+            [result["task"]["title"] for result in data["results"]],
+            ["Highest priority", "Eligible"],
+        )
+        self.assertEqual(self.client.get("/api/v1/tasks?status=pending").json_data()["count"], 1)
+
     def test_failed_task_retry_and_audit_metrics(self) -> None:
         """Tasks that fail should transition to retrying/failed and be recorded in audit logs and metrics."""
         create_res = self.client.post(
