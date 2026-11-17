@@ -23,6 +23,7 @@ from apiforge.router import (
 from apiforge.schema import (
     TaskBatchCreateRequest,
     TaskCreateRequest,
+    TaskUpdateRequest,
     TokenRequest,
     WebhookCreateRequest,
 )
@@ -456,6 +457,42 @@ class ApiForgeApp:
                     error_type="https://apiforge.dev/errors/task-not-found",
                 )
             return task
+
+        @self.post(
+            "/api/v1/tasks/{task_id}/update",
+            tags=["tasks"],
+            auth_required=True,
+            request_model=TaskUpdateRequest,
+            summary="Partially update task metadata",
+        )
+        def update_task(ctx: RequestContext) -> dict[str, Any]:
+            """Update task metadata unless the task has already completed."""
+            task_id = ctx.path_params["task_id"]
+            task = self.storage.get_task(task_id)
+            if task is None:
+                raise ApiHttpError(
+                    status_code=404,
+                    title="Task Not Found",
+                    detail=f"Task '{task_id}' does not exist",
+                    error_type="https://apiforge.dev/errors/task-not-found",
+                )
+            if task["status"] == "completed":
+                raise ApiHttpError(
+                    status_code=409,
+                    title="Task Conflict",
+                    detail="Completed tasks cannot be updated",
+                    error_type="https://apiforge.dev/errors/task-conflict",
+                )
+            req: TaskUpdateRequest = ctx.validated_body
+            updated = self.storage.update_task_metadata(
+                task_id,
+                title=req.title,
+                priority=req.priority,
+                max_retries=req.max_retries,
+                payload=req.payload,
+                webhook_url=req.webhook_url,
+            )
+            return updated if updated is not None else task
 
         @self.post(
             "/api/v1/tasks/{task_id}/cancel",

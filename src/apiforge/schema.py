@@ -40,6 +40,17 @@ class TaskCreateRequest:
 
 
 @dataclass
+class TaskUpdateRequest:
+    """Request payload for partially updating task metadata."""
+
+    title: str | None = None
+    priority: int | None = None
+    max_retries: int | None = None
+    payload: dict[str, Any] | None = None
+    webhook_url: str | None = None
+
+
+@dataclass
 class TaskBatchCreateRequest:
     """Request payload for creating multiple managed asynchronous tasks."""
 
@@ -134,6 +145,13 @@ def _apply_domain_constraints(instance: Any) -> list[dict[str, Any]]:
         if not 1 <= instance.priority <= 5:
             errors.append({"field": "priority", "message": "priority must be between 1 and 5"})
         if not 0 <= instance.max_retries <= 10:
+            errors.append({"field": "max_retries", "message": "max_retries must be between 0 and 10"})
+    elif isinstance(instance, TaskUpdateRequest):
+        if instance.title is not None and not instance.title.strip():
+            errors.append({"field": "title", "message": "title must not be empty"})
+        if instance.priority is not None and not 1 <= instance.priority <= 5:
+            errors.append({"field": "priority", "message": "priority must be between 1 and 5"})
+        if instance.max_retries is not None and not 0 <= instance.max_retries <= 10:
             errors.append({"field": "max_retries", "message": "max_retries must be between 0 and 10"})
     elif isinstance(instance, TaskBatchCreateRequest):
         if not 1 <= len(instance.tasks) <= 50:
