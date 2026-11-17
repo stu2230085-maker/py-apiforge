@@ -61,6 +61,43 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(problem["status"], 401)
         self.assertEqual(problem["title"], "Unauthorized")
 
+    def test_worker_actions_endpoint_and_built_in_actions(self) -> None:
+        """The actions endpoint lists built-ins and tasks can execute each new action."""
+        unauth_res = TestClient(self.app).get("/api/v1/actions")
+        self.assertEqual(unauth_res.status_code, 401)
+
+        actions_res = self.client.get("/api/v1/actions")
+        self.assertEqual(actions_res.status_code, 200)
+        actions_data = actions_res.json_data()
+        self.assertEqual(actions_data["count"], len(actions_data["actions"]))
+        self.assertEqual(
+            [action["name"] for action in actions_data["actions"]],
+            ["compute_stats", "hash_content", "json_filter", "text_analysis", "transform_payload"],
+        )
+        self.assertTrue(next(action for action in actions_data["actions"] if action["name"] == "json_filter")["description"])
+
+        text_task = self.client.post(
+            "/api/v1/tasks",
+            json_body={
+                "title": "Analyze text",
+                "action": "text_analysis",
+                "payload": {"text": "Hello hello\nworld"},
+            },
+        ).json_data()
+        text_result = self.client.post(f"/api/v1/tasks/{text_task['id']}/process").json_data()["task"]["result"]
+        self.assertEqual(text_result, {"char_count": 17, "word_count": 3, "unique_word_count": 2, "line_count": 2})
+
+        json_task = self.client.post(
+            "/api/v1/tasks",
+            json_body={
+                "title": "Filter JSON",
+                "action": "json_filter",
+                "payload": {"data": {"keep": 1, "other": 2}, "keys": ["keep", "missing", "keep"]},
+            },
+        ).json_data()
+        json_result = self.client.post(f"/api/v1/tasks/{json_task['id']}/process").json_data()["task"]["result"]
+        self.assertEqual(json_result, {"filtered": {"keep": 1}, "matched_count": 2})
+
     def test_jwt_issuance_and_bearer_auth_flow(self) -> None:
         """Client should be able to exchange an API key for a JWT and use Bearer authentication."""
         token_res = self.client.post(
