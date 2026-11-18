@@ -21,6 +21,7 @@ from apiforge.router import (
     parse_url_and_query,
 )
 from apiforge.schema import (
+    ApiKeyCreateRequest,
     TaskBatchCreateRequest,
     TaskCreateRequest,
     TaskUpdateRequest,
@@ -317,6 +318,61 @@ class ApiForgeApp:
                 "subject": body.subject,
                 "role": body.role,
             }
+
+        @self.get(
+            "/api/v1/auth/keys",
+            tags=["auth"],
+            auth_required=True,
+            summary="List active API keys (masked)",
+        )
+        def list_api_keys(_ctx: RequestContext) -> dict[str, Any]:
+            """Return masked representations of active API keys."""
+            items = [
+                {"key_prefix": key[:10], "owner": owner}
+                for key, owner in sorted(self.api_keys.items())
+            ]
+            return {"items": items, "count": len(items)}
+
+        @self.post(
+            "/api/v1/auth/keys",
+            tags=["auth"],
+            auth_required=True,
+            request_model=ApiKeyCreateRequest,
+            status_code=201,
+            summary="Issue a new dynamic API key",
+        )
+        def create_api_key(ctx: RequestContext) -> dict[str, Any]:
+            """Generate and register a new API key at runtime."""
+            req: ApiKeyCreateRequest = ctx.validated_body
+            new_key = generate_secret_token("afg")
+            self.api_keys[new_key] = req.owner
+            return {
+                "api_key": new_key,
+                "key_prefix": new_key[:10],
+                "owner": req.owner,
+                "label": req.label,
+            }
+
+        @self.delete(
+            "/api/v1/auth/keys/{key_prefix}",
+            tags=["auth"],
+            auth_required=True,
+            summary="Revoke an API key by prefix",
+        )
+        def revoke_api_key(ctx: RequestContext) -> dict[str, Any]:
+            """Revoke an active API key matching the specified prefix."""
+            key_prefix = ctx.path_params["key_prefix"]
+            matched_keys = [k for k in self.api_keys if k.startswith(key_prefix)]
+            if not matched_keys:
+                raise ApiHttpError(
+                    status_code=404,
+                    title="API Key Not Found",
+                    detail=f"No API key found matching prefix '{key_prefix}'",
+                    error_type="https://apiforge.dev/errors/api-key-not-found",
+                )
+            for k in matched_keys:
+                del self.api_keys[k]
+            return {"revoked": True, "key_prefix": key_prefix}
 
         @self.get(
             "/api/v1/actions",

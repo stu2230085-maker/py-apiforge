@@ -28,6 +28,14 @@ class TokenRequest:
 
 
 @dataclass
+class ApiKeyCreateRequest:
+    """Request payload for issuing a dynamic API key."""
+
+    owner: str
+    label: str = ""
+
+
+@dataclass
 class TaskCreateRequest:
     """Request payload for creating a managed asynchronous task."""
 
@@ -161,6 +169,9 @@ def _apply_domain_constraints(instance: Any) -> list[dict[str, Any]]:
             errors.append({"field": "subject", "message": "subject must not be empty"})
         if instance.ttl_seconds <= 0 or instance.ttl_seconds > 86400 * 30:
             errors.append({"field": "ttl_seconds", "message": "ttl_seconds must be between 1 and 2592000"})
+    elif isinstance(instance, ApiKeyCreateRequest):
+        if not instance.owner.strip():
+            errors.append({"field": "owner", "message": "owner must not be empty"})
     elif isinstance(instance, WebhookCreateRequest):
         if not (
             instance.target_url.startswith("http://")

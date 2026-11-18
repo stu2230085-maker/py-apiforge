@@ -112,6 +112,34 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(tasks_res.status_code, 200)
         self.assertEqual(tasks_res.json_data()["count"], 0)
 
+    def test_dynamic_api_key_lifecycle(self) -> None:
+        """Administrators can issue, list, authenticate with, and revoke dynamic API keys."""
+        create_res = self.client.post(
+            "/api/v1/auth/keys",
+            json_body={"owner": "analytics-service", "label": "CI key"},
+        )
+        self.assertEqual(create_res.status_code, 201)
+        created = create_res.json_data()
+        new_key = created["api_key"]
+        key_prefix = created["key_prefix"]
+        self.assertEqual(created["owner"], "analytics-service")
+        self.assertEqual(created["label"], "CI key")
+
+        new_client = TestClient(self.app, default_headers={"X-API-Key": new_key})
+        self.assertEqual(new_client.get("/api/v1/tasks").status_code, 200)
+
+        list_res = self.client.get("/api/v1/auth/keys")
+        self.assertEqual(list_res.status_code, 200)
+        prefixes = {item["key_prefix"] for item in list_res.json_data()["items"]}
+        self.assertIn(key_prefix, prefixes)
+
+        revoke_res = self.client.delete(f"/api/v1/auth/keys/{key_prefix}")
+        self.assertEqual(revoke_res.status_code, 200)
+        self.assertEqual(revoke_res.json_data(), {"revoked": True, "key_prefix": key_prefix})
+
+        self.assertEqual(new_client.get("/api/v1/tasks").status_code, 401)
+        self.assertEqual(self.client.delete(f"/api/v1/auth/keys/{key_prefix}").status_code, 404)
+
     def test_task_lifecycle_and_signed_webhook_delivery(self) -> None:
         """Creating and processing a task should compute results and emit verified HMAC webhooks."""
         wh_secret = "whsec_integration_12345"

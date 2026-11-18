@@ -4,7 +4,9 @@ from apiforge.app import ApiForgeApp
 from apiforge.ratelimit import RateLimitDecision, TokenBucketRateLimiter
 from apiforge.router import ApiHttpError, HttpResponse, RequestContext, Router
 from apiforge.schema import (
+    ApiKeyCreateRequest,
     SchemaValidationError,
+    TaskBatchCreateRequest,
     TaskCreateRequest,
     TaskUpdateRequest,
     TokenRequest,
@@ -30,6 +32,7 @@ __version__ = "1.0.0"
 __all__ = [
     "ApiForgeApp",
     "ApiHttpError",
+    "ApiKeyCreateRequest",
     "AuthPrincipal",
     "AuthenticationError",
     "HttpResponse",
@@ -38,6 +41,7 @@ __all__ = [
     "Router",
     "SchemaValidationError",
     "StorageRepository",
+    "TaskBatchCreateRequest",
     "TaskCreateRequest",
     "TaskUpdateRequest",
     "TaskWorker",
