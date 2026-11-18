@@ -99,11 +99,17 @@ PYTHONPATH=src python3 -m apiforge openapi --output openapi.json
 # 開発・テスト用 HS256 JWT アクセストークンを発行
 PYTHONPATH=src python3 -m apiforge token --sub admin --role admin
 
+# JWT アクセストークンの署名・有効期限を検証しクレームを表示
+PYTHONPATH=src python3 -m apiforge verify-token <JWT_TOKEN>
+
+# データベース内のタスク・Webhook 統計情報を JSON 出力
+PYTHONPATH=src python3 -m apiforge stats --db apiforge.db
+
 # REST API サーバーを起動 (デフォルト: http://127.0.0.1:8000, Docs: http://127.0.0.1:8000/docs)
 PYTHONPATH=src python3 -m apiforge serve --host 127.0.0.1 --port 8000 --db apiforge.db
 ```
 
-### 2. 標準搭載 API エンドポイント一覧
+### 2. 標準搭載 API エンドポイント一覧（全 27 エンドポイント）
 
 | Method | Path | Auth | 概要 |
 | :--- | :--- | :--- | :--- |
@@ -112,14 +118,28 @@ PYTHONPATH=src python3 -m apiforge serve --host 127.0.0.1 --port 8000 --db apifo
 | `GET` | `/openapi.json` | Public | OpenAPI 3.1.0 仕様 JSON |
 | `GET` | `/docs` | Public | ブラウザ用インタラクティブ API ドキュメント画面 |
 | `POST` | `/api/v1/auth/token` | Required | HS256 JWT アクセストークンの発行 |
+| `GET` | `/api/v1/auth/keys` | Required | 有効な API キー一覧の取得（マスク表示） |
+| `POST` | `/api/v1/auth/keys` | Required | 新規 API キーの動的発行 |
+| `DELETE` | `/api/v1/auth/keys/{key_prefix}` | Required | 指定プレフィックスの API キー失効（Revoke） |
+| `GET` | `/api/v1/actions` | Required | 利用可能なタスクワーカーアクション一覧の取得 |
 | `POST` | `/api/v1/tasks` | Required | 非同期タスクの新規作成（バリデーション・永続化） |
-| `GET` | `/api/v1/tasks` | Required | ステータスフィルタ・ページネーション付きタスク一覧取得 |
+| `POST` | `/api/v1/tasks/batch` | Required | 複数タスクの一括作成（最大 50 件） |
+| `GET` | `/api/v1/tasks` | Required | ステータス・優先度 (`min_priority`)・キーワード (`q`) フィルタ付きタスク一覧取得 |
+| `GET` | `/api/v1/tasks/stats` | Required | ステータス別・優先度別のタスク集計統計の取得 |
+| `GET` | `/api/v1/tasks/export` | Required | タスク一覧の JSON / CSV (`?format=csv`) エクスポート |
+| `POST` | `/api/v1/tasks/process-pending` | Required | 待機中 (`pending`) タスクの優先度順一括実行 |
 | `GET` | `/api/v1/tasks/{task_id}` | Required | タスク詳細情報の取得 |
+| `POST` | `/api/v1/tasks/{task_id}/update` | Required | タスクメタデータの部分更新 |
+| `POST` | `/api/v1/tasks/{task_id}/cancel` | Required | タスクのキャンセル（完了済みは 409 Conflict） |
+| `POST` | `/api/v1/tasks/{task_id}/retry` | Required | 失敗・キャンセル済みタスクのリトライ状態リセット |
 | `POST` | `/api/v1/tasks/{task_id}/process` | Required | タスクの即時実行 & HMAC 署名付き Webhook イベント配信 |
 | `DELETE` | `/api/v1/tasks/{task_id}` | Required | タスクの削除 |
 | `POST` | `/api/v1/webhooks` | Required | Webhook エンドポイント購読の登録 |
 | `GET` | `/api/v1/webhooks` | Required | 登録済み Webhook と署名付き配信履歴の取得 |
-| `GET` | `/api/v1/audit-logs` | Required | API リクエスト監査ログの取得 |
+| `DELETE` | `/api/v1/webhooks/{webhook_id}` | Required | Webhook 購読の削除 |
+| `POST` | `/api/v1/webhooks/{webhook_id}/test` | Required | 署名付き `webhook.ping` テストイベント配信の発火 |
+| `GET` | `/api/v1/audit-logs` | Required | API 監査ログの検索（`method`, `status_code`, `actor` フィルタ対応） |
+| `DELETE` | `/api/v1/audit-logs` | Required | API 監査ログの一括クリーンアップ |
 
 ---
 
